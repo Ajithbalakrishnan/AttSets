@@ -258,7 +258,7 @@ class Data:
 
     def load_X_Y_test_next_batch(self, test_mv):
         num = self.total_mv
-        idx = random.sample(range(len(self.X_rgb_test_files_ori)/num), self.batch_size)
+        idx = random.sample(range(len(self.X_rgb_test_files_ori)//num), self.batch_size)
         X_rgb_files = []
         Y_vox_files =[]
 
