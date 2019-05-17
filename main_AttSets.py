@@ -7,7 +7,7 @@ sys.path.append('..')
 import tools as tools
 import numpy as np
 
-batch_size = 4
+batch_size = 1
 img_res = 127
 vox_res32 = 32
 total_mv = 24
