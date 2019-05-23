@@ -2,13 +2,16 @@ import tensorflow as tf
 from PIL import Image
 import numpy as np
 import os
+import sys
 import random
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from mpl_toolkits import mplot3d
 import re
 import binvox_rw as binvox_rw
-
+#################################################################
+from voxel import voxel2obj
+#################################################################
 class Data:
     def __init__(self, config):
         self.config = config
@@ -27,14 +30,20 @@ class Data:
 
     @staticmethod
     def plotFromVoxels(voxels,title=''):
+        voxel2obj('prediction.obj', voxels)
         if len(voxels.shape) > 3:
             x_d = voxels.shape[0]
             y_d = voxels.shape[1]
             z_d = voxels.shape[2]
             v = voxels[:, :, :, 0]
+           
             v = np.reshape(v, (x_d, y_d, z_d))
         else:
             v = voxels
+        
+        print(v.shape)   ###############################################  (32, 32, 32)  #######################################
+		
+        
         x, y, z = v.nonzero()
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
@@ -54,10 +63,13 @@ class Data:
             ax.plot([xb], [yb], [zb], 'w')
         plt.grid()
 
-        #plt.show()
+       	plt.show()
         plt.title(title)
         from matplotlib.pyplot import show
         show(block=False)
+        
+
+
     
     ########## from 3D-R2N2
     @staticmethod
@@ -72,12 +84,23 @@ class Data:
     
     @staticmethod
     def add_random_color_background(im, color_range):
+        
         r, g, b = [np.random.randint(color_range[i][0], color_range[i][1] + 1) for i in range(3)]
+#        print (r)
+#        print (g)
+#        print (b)
         if isinstance(im, Image.Image):
-            im = np.array(im)
+            im = np.array(im) 
+#        print (im.shape)
+      #  b = np.array([3])         ###
+      #  np.concatenate((im, b))    ##
+        #im.numpy.append(3)        ###
+       # print (im.shape)         ###
         if im.shape[2] > 3:
+              
             # If the image has the alpha channel, add the background
             alpha = (np.expand_dims(im[:, :, 3], axis=2) == 0).astype(np.float)
+	   
             im = im[:, :, :3]
             bg_color = np.array([[[r, g, b]]])
             im = alpha * bg_color + (1 - alpha) * im
@@ -129,9 +152,10 @@ class Data:
     @staticmethod
     def load_single_X_rgb_r2n2(img_path, train):
         im = Image.open(img_path)
+        
         t_im = Data.preprocess_img(im, train=train)
-        #plt.figure()
-        #plt.imshow(t_im)
+       # plt.figure()
+       # plt.imshow(t_im)
         return t_im
 
     @staticmethod
@@ -258,7 +282,7 @@ class Data:
 
     def load_X_Y_test_next_batch(self, test_mv):
         num = self.total_mv
-        idx = random.sample(range(len(self.X_rgb_test_files_ori)//num), self.batch_size)
+        idx = random.sample(range(len(self.X_rgb_test_files_ori)//num), self.batch_size)  #added extra '/'
         X_rgb_files = []
         Y_vox_files =[]
 
