@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow.keras.callbacks import TensorBoard         ###@@##@@
 import os
 import shutil
 import sys
@@ -6,19 +7,20 @@ import scipy.io
 sys.path.append('..')
 import tools as tools
 import numpy as np
-
+import time
+#@@@@####################################@@@@@@@@@@@@@@@@@@@@@@
 batch_size = 1
 img_res = 127
 vox_res32 = 32
-total_mv = 24
+total_mv = 24   #Virtual memory use
 GPU0 = '0'
-re_train=False
-
+#re_train=False
+re_train=True
 single_view_train = False
 multi_view_train = False
 
 #####################################
-config={}
+config={}                                 # python dictionary
 config['batch_size'] = batch_size
 config['total_mv'] = total_mv
 #config['cat_names'] = ['02691156','02828884','02933112','02958343','03001627','03211117',
@@ -27,6 +29,10 @@ config['cat_names'] = ['03001627']
 for name in config['cat_names']:
     config['X_rgb_'+name] = './Data_sample/ShapeNetRendering/'+name+'/'
     config['Y_vox_'+name] = './Data_sample/ShapeNetVox32/'+name+'/'
+
+# output : {'batch_size': 1, 'total_mv': 24, 'cat_names': ['03001627'], 'Y_vox_03001627': '/home/wiproec4/3d reconstruction/attsets/Data_sample/#ShapeNetVox32/03001627/', 'X_rgb_03001627': '/home/wiproec4/3d reconstruction/attsets/Data_sample/ShapeNetRendering/03001627/'}
+
+
 #####################################
 
 def attsets_fc(x, out_ele_num,  name):
@@ -202,12 +208,15 @@ class Network:
 		
 		with tf.device('/gpu:' + GPU0):
 			### rec loss
+			print ("reached")
 			Y_vox_ = tf.reshape(self.Y_vox, shape=[-1, vox_res ** 3])
 			Y_pred_ = tf.reshape(self.Y_pred, shape=[-1, vox_res ** 3])
 			self.rec_loss = tf.reduce_mean(-tf.reduce_mean(Y_vox_ * tf.log(Y_pred_ + 1e-8), reduction_indices=[1]) -
 			                     tf.reduce_mean((1 - Y_vox_) * tf.log(1 - Y_pred_ + 1e-8),reduction_indices=[1]))
 			sum_rec_loss = tf.summary.scalar('rec_loss', self.rec_loss)
 			self.sum_merged = sum_rec_loss
+			
+             
 
 			base_var = [var for var in tf.trainable_variables() if var.name.startswith('r2n/l')]
 			att_var = [var for var in tf.trainable_variables() if var.name.startswith('r2n/att')]
@@ -223,8 +232,8 @@ class Network:
 		self.sum_writer_test = tf.summary.FileWriter(self.test_sum_dir, self.sess.graph)
 
 		#######################
-		path = self.train_mod_dir
-		#path = './Model_released/'  # retrain the released model
+		#path = self.train_mod_dir
+		path = './Model_released/'  # retrain the released model
 		if os.path.isfile(path + 'model.cptk.data-00000-of-00001'):
 			print ("restoring saved model!")
 			self.saver.restore(self.sess, path + 'model.cptk')
@@ -233,48 +242,52 @@ class Network:
 		return 0
     
 	def train(self, data):
-		for epoch in range(0, 50, 1):
+		for epoch in range(0, 200, 1):
 			train_view_num = 24  ##!!!!!!!!!!!
 			data.shuffle_train_files(epoch, train_mv=train_view_num)
-			total_train_batch_num = data.total_train_batch_num
+			total_train_batch_num = data.total_train_batch_num  #int(len(self.X_rgb_train_files)/(self.batch_size*train_mv))
 			print ('total_train_batch_num:', total_train_batch_num)
 			for i in range(total_train_batch_num):
 				#### training
 				X_rgb_bat, Y_vox_bat = data.load_X_Y_train_next_batch(train_mv=train_view_num)
-
+				print(time.ctime())
+                                			
 				##### option 1: seperate train, seperate optimize
-				if epoch<=30:
-					single_view_train=True
-					multi_view_train=False
-				else:
-					single_view_train=False
-					multi_view_train=True
+				#if epoch<=30:
+				#	single_view_train=True
+				#	multi_view_train=False
+				#else:
+				#	single_view_train=False
+				#	multi_view_train=True
 
 				##### optiion 2: joint train, seperate optimize
-				#single_view_train = True
-				#multi_view_train = True
+				single_view_train = True
+				multi_view_train = True
 
 				###########  single view train
 				if single_view_train:
+					
 					rgb = np.reshape(X_rgb_bat,[batch_size*train_view_num, 1, 127,127,3])
 					vox = np.tile(Y_vox_bat[:,None,:,:,:],[1,train_view_num,1,1,1])
 					vox = np.reshape(vox, [batch_size*train_view_num, 32,32,32])
 					_, rec_loss_c, sum_train = self.sess.run([self.base_optim,self.rec_loss,self.sum_merged],
 					feed_dict={self.X_rgb: rgb, self.Y_vox: vox, self.lr: 0.0001})
 					print ('ep:', epoch, 'i:', i, 'train single rec loss:', rec_loss_c)
+					
 				
 				########## multi view train
 				if multi_view_train:
 					rec_loss_c, _, sum_train = self.sess.run([self.rec_loss, self.att_optim, self.sum_merged],
 				    feed_dict={self.X_rgb: X_rgb_bat, self.Y_vox: Y_vox_bat,self.lr: 0.0001})
 					print ('ep:', epoch, 'i:', i, 'train multi rec loss:', rec_loss_c)
+					
 				
 				############
-				if i % 100 == 0:
-				    self.sum_writer_train.add_summary(sum_train, epoch * total_train_batch_num + i)
+				if epoch % 100 == 0:
+					self.sum_writer_train.add_summary(sum_train, epoch * total_train_batch_num + i)
 				
 				#### testing
-				if i % 400 == 0 :
+				if epoch > 150 :
 					X_rgb_batch, Y_vox_batch = data.load_X_Y_test_next_batch(test_mv=1)
 					rec_loss_te, Y_vox_test_pred, att_pred, sum_test = \
 						self.sess.run([self.rec_loss, self.Y_pred,self.weights, self.sum_merged],
@@ -287,22 +300,46 @@ class Network:
 					scipy.io.savemat(self.test_res_dir+'X_Y_pred_'+str(epoch).zfill(2)+'_'+str(i).zfill(5)+'.mat',to_save,do_compression=True)
 					self.sum_writer_test.add_summary(sum_test, epoch * total_train_batch_num + i)
 					print ('ep:', epoch, 'i:', i, 'test rec loss:', rec_loss_te)
-				
+					
+
 				#### model saving
-				if i % 200 == 0 and i > 0:
+				if epoch % 10 == 0 and epoch > 180:
 					self.saver.save(self.sess, save_path=self.train_mod_dir + 'model.cptk')
 					print ('epoch:', epoch, 'i:', i, 'model saved!')
+
 				
+				
+				
+
 				#### full testing
 				# ...
 
 ##########
 if __name__ =='__main__':
-	net = Network()
-	net.build_graph()
 
-	data = tools.Data(config)
-	net.train(data)
+		net = Network()          #net=object to create instance
+
+		print("network compleated")   ###
+
+		net.build_graph()
+
+#               sys.exit(). sys.exit()        ###
+		
+		data = tools.Data(config)
+
+		net.train(data)
+
+##########################################----TensorBoard----###########################################
+#		with tf.Session() as sess:
+#			merge = tf.summary.merge_all()            
+#			writer = tf.summary.FileWriter('./graphs/train', sess.graph)
+#			for step in range(3):
+#				summary=sess.run(merge)
+#				writer.add_summary(summary,step)
+			
+           
+
+
 	
 
 	
